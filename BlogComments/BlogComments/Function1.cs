@@ -1,37 +1,59 @@
 using System.Collections.Generic;
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Octokit;
 
 namespace BlogComments
 {
     public class Function1
     {
         private readonly ILogger _logger;
+        private readonly string _recaptchaSecret;
+        private readonly string _githubToken;
 
-        public Function1(ILoggerFactory loggerFactory)
+        public Function1(ILoggerFactory loggerFactory, IConfiguration config)
         {
             _logger = loggerFactory.CreateLogger<Function1>();
+            _recaptchaSecret = config["RECAPTCHA_SECRET"] ?? throw new InvalidOperationException("Missing config key RECAPTCHA_SECRET");
+            _githubToken = config["GITHUB_TOKEN"] ?? throw new InvalidOperationException("Missing config key GITHUB_TOKEN");
         }
 
         [Function("Function1")]
-        public HttpResponseData Run([HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequestData req)
+        public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequestData req)
         {
             using var _ = Globals.SetCurrentRequest(req);
             try
             {
                 var parameters = ParseParameters();
 
-                _logger.LogInformation("C# HTTP trigger function processed a request.");
+                await GoogleRecaptchaApi.VerifyAsync(_recaptchaSecret, parameters.RecaptchaResponse);
 
-                var response = req.CreateResponse(HttpStatusCode.OK);
-                response.Headers.Add("Content-Type", "text/plain; charset=utf-8");
+                var commentId = Guid.NewGuid().ToString();
+                var date = DateTime.UtcNow;
+                var ghc = new GitHubClient(new ProductHeaderValue("blog.stephencleary.com")) { Credentials = new(_githubToken) };
+                var commitMessage = $"(Staticman) {parameters.AuthorName}: {parameters.Message}\n\n{parameters.PostUri}#comment-{commentId}";
+                var path = $"raw/{parameters.PostId}/{date.ToString("yyyy-MM-dd")}-{commentId}.json";
+                var content = new JsonObject()
+                {
+                    ["_id"] = commentId,
+                    ["postId"] = parameters.PostId,
+                    ["postUri"] = parameters.PostUri,
+                    ["replyTo"] = parameters.ReplyTo,
+                    ["authorEmailEncrypted"] = parameters.AuthorEmailEncrypted,
+                    ["authorEmailMD5"] = parameters.AuthorEmailMD5,
+                    ["authorName"] = parameters.AuthorName,
+                    ["authorUri"] = parameters.AuthorUri,
+                    ["message"] = parameters.Message,
+                    ["date"] = date.ToString("O"),
+                }.ToJsonString();
+                await ghc.Repository.Content.CreateFile("StephenCleary", "comments.stephencleary.com", path, new(commitMessage, content));
 
-                response.WriteString("Welcome to Azure Functions!");
-
-                return response;
+                return req.CreateResponse();
             }
             catch (BadRequestException ex)
             {

@@ -18,10 +18,17 @@ public static class GoogleRecaptchaApi
             { "response", clientResponse },
         });
         var response = await Constants.HttpClient.PostAsync(uri, null);
-        response.EnsureSuccessStatusCode();
-        var responseJson = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        if (responseJson.RootElement.GetProperty("success").GetBoolean())
-            return;
-        throw new InvalidOperationException($"Recaptcha validation failed: {responseJson.RootElement.GetProperty("error-codes")}");
+        try
+        {
+            response.EnsureSuccessStatusCode();
+            var responseJson = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            if (responseJson.RootElement.GetProperty("success").GetBoolean())
+                return;
+            throw new InvalidOperationException($"Recaptcha validation failed: {responseJson.RootElement.GetProperty("error-codes")}");
+        }
+        catch (Exception ex)
+        {
+            throw new BadRequestException(ex);
+        }
     }
 }
