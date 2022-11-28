@@ -39,7 +39,7 @@ namespace BlogComments
             }
         }
 
-        private static (string AuthorName, string AuthorEmailEncrypted, string AuthorEmailMD5, string AuthorUri, string Message, string PostId, string PostUri, string ReplyTo) ParseParameters()
+        private static (string AuthorName, string AuthorEmailEncrypted, string AuthorEmailMD5, string AuthorUri, string Message, string PostId, string PostUri, string ReplyTo, string RecaptchaResponse) ParseParameters()
         {
             try
             {
@@ -52,7 +52,8 @@ namespace BlogComments
                 var postId = json.GetProperty("postId").GetString() ?? throw new InvalidOperationException("Missing field postId");
                 var postUri = json.GetProperty("postUri").GetString() ?? throw new InvalidOperationException("Missing field postUri");
                 var replyTo = json.GetProperty("replyTo").GetString() ?? throw new InvalidOperationException("Missing field replyTo");
-                return (authorName, authorEmailEncrypted, authorEmailMD5, authorUri, message, postId, postUri, replyTo);
+                var recaptchaResponse = json.GetProperty("g-recaptcha-response").GetString() ?? throw new InvalidOperationException("Missing field g-recaptcha-response");
+                return (authorName, authorEmailEncrypted, authorEmailMD5, authorUri, message, postId, postUri, replyTo, recaptchaResponse);
             }
             catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
             {
